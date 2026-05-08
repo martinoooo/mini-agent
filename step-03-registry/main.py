@@ -7,7 +7,7 @@ Step 3: 工具注册表 — 自注册模式
   - 理解依赖链: registry.py ← tools/*.py ← main.py（单向，无循环）
 
 运行:
-  cp .env.example .env   # 编辑填入你的 API Key
+  # 先在项目根目录 cp .env.example .env 并填入 API Key
   python main.py
 
 与 Step 2 的区别:
@@ -37,7 +37,7 @@ import tools.terminal_tool
 # registry 是唯一的真相来源
 from tools.registry import get_all, get_handler, build_openai_schemas
 
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 
 def main():

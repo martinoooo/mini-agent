@@ -6,6 +6,7 @@
 添加新工具 = 新建一个 .py 文件。不需要修改任何现有代码。
 """
 
+from __future__ import annotations
 from typing import Callable
 
 # 全局注册表。Python 的 import 机制保证它只初始化一次，

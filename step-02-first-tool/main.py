@@ -8,7 +8,7 @@ Step 2: 第一个工具 — 给 LLM 一把 "螺丝刀"
       用户问问题 → LLM 说"我要调用工具" → 我们执行工具 → 把结果告诉 LLM → LLM 回复用户
 
 运行:
-  cp .env.example .env   # 编辑填入你的 API Key
+  # 先在项目根目录 cp .env.example .env 并填入 API Key
   python main.py
 
 与 Step 1 的区别:
@@ -26,7 +26,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 import json
 
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 
 # ── 工具定义 ──────────────────────────────────────────

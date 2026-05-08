@@ -7,7 +7,7 @@ Step 4: 工具集系统 — 按场景组合工具
   - 理解关注点分离：registry 管注册，toolset 管编组，main 只管调用
 
 运行:
-  cp .env.example .env
+  # 先在项目根目录 cp .env.example .env 并填入 API Key
   python main.py
 
 与 Step 3 的区别:
@@ -24,7 +24,7 @@ from openai import OpenAI
 from toolsets import get_toolset, get_all_toolsets, discover_tools
 from tools.registry import get_handler, build_openai_schemas
 
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 # ── 场景切换：修改这个变量即可启用不同的工具组合 ──────
 # 试试改成 "files" 或 "terminal" 看看区别

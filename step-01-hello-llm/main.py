@@ -6,9 +6,9 @@ Step 1: Hello LLM — 最简单的 LLM 调用
   - 理解三个核心角色: system（设定行为）、user（用户输入）、assistant（模型回复）
 
 运行:
-  cp .env.example .env   # 编辑填入你的 API Key
-  pip install openai python-dotenv
-  python main.py
+  # 先在项目根目录 cp .env.example .env 并填入 API Key
+  pip3 install openai python-dotenv
+  python3 main.py
 
 延伸思考:
   LLM 只能生成文本。它不能读你的文件、不能执行命令、不能上网搜索。
@@ -20,7 +20,7 @@ import os
 from dotenv import load_dotenv
 from openai import OpenAI
 
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 
 def main():

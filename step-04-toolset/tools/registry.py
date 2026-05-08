@@ -1,6 +1,7 @@
 """
 工具注册表 — 与 Step 3 相同（自注册模式）
 """
+from __future__ import annotations
 from typing import Callable
 
 _registry: dict[str, dict] = {}

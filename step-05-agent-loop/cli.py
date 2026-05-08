@@ -12,7 +12,7 @@ CLI 入口 — 交互式命令行
     两个文件，职责清晰。
 
 运行:
-  cp .env.example .env
+  # 先在项目根目录 cp .env.example .env 并填入 API Key
   python cli.py
 """
 
@@ -20,7 +20,7 @@ import os
 from dotenv import load_dotenv
 from agent import AIAgent
 
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 
 def main():
