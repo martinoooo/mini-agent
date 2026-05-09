@@ -1,28 +1,55 @@
 """
-AIAgent 类 — Step 11: 命令审批
+AIAgent 类 — Step 14: 错误分类与重试
 
-相比 Step 10 的变化:
-  - 新增 approval_manager: 高风险工具执行前需要用户确认
-  - _execute_tool() 增加审批检查环节
-  - 审批回调由 CLI 注入，Agent 本身不关心交互方式
+相比 Step 13 的变化:
+  - API 调用失败时自动分类错误并重试
+  - 可重试: 429 限流、5xx 服务端错误、超时、网络错误
+  - 不可重试: 400 请求错误、401 认证失败
 
 学习目标:
-  - 理解策略模式（Strategy Pattern）：审批逻辑可插拔
-  - 理解为什么 Agent 不应该自己做审批决策
-  - 理解回调注入：CLI 和 Agent 的职责分离
+  - 理解错误分类：4xx 客户端错(不改) vs 5xx 服务端错(可重试)
+  - 理解指数退避：避免重试风暴，给服务端恢复时间
+  - 理解 Agent 的容错设计：优雅降级而非直接崩溃
+  - _execute_tool() 在执行前先过护栏
+  - 拦截后返回错误消息，LLM 据此调整行为
+
+学习目标:
+  - 理解 Agent 安全的三道防线：审批 → 护栏 → 日志
+  - 理解护栏的设计原则：不信任 LLM，系统强制执行
+  - 理解拦截后的反馈机制：LLM 读错误消息自我纠正
 """
 
 import json
 import sys
+from pathlib import Path
 from openai import OpenAI
 from tools.registry import get_handler, build_openai_schemas
 from tools.approval import ApprovalManager, RISK_MEDIUM
+from tools import guardrails
+from tools.retry import retry_call
 from toolsets import get_toolset, discover_tools
 
 # 压缩参数
-TOKEN_THRESHOLD = 4000   # token 数超过此值触发压缩
-KEEP_TAIL = 6             # 保留最后 N 条消息不压缩
-TOKEN_ESTIMATE_RATIO = 4  # 粗略估算: N 字符 ≈ 1 token
+TOKEN_THRESHOLD = 4000
+KEEP_TAIL = 6
+TOKEN_ESTIMATE_RATIO = 4
+
+MEMORY_FILE = Path.home() / ".mini-agent" / "MEMORY.md"
+
+
+def _load_memory_context() -> str:
+    """读取 MEMORY.md，返回注入 system prompt 的上下文"""
+    try:
+        if MEMORY_FILE.exists():
+            content = MEMORY_FILE.read_text(encoding="utf-8").strip()
+            # 去掉 HTML 注释行，提取实际内容
+            lines = [l for l in content.split("\n") if not l.strip().startswith("<!--")]
+            text = "\n".join(lines).strip()
+            if text and text != "(记忆为空)":
+                return text
+    except Exception:
+        pass
+    return ""
 
 
 class AIAgent:
@@ -33,7 +60,7 @@ class AIAgent:
         model: str = "deepseek-v4-pro",
         toolset: str = "full",
         max_iterations: int = 10,
-        approval_callback=None,        # ← Step 11: 审批回调
+        approval_callback=None,
     ):
         self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.model = model
@@ -41,18 +68,28 @@ class AIAgent:
         self.max_iterations = max_iterations
         self.session_id = None
 
-        # ── 审批管理器 ───────────────────────────────
         self.approval = ApprovalManager(callback=approval_callback)
 
         discover_tools()
         tool_names = get_toolset(toolset)
         self.tools = build_openai_schemas(tool_names)
 
-        self.system_prompt = (
+        # ── 构建 system prompt（含记忆上下文）──────────
+        base_prompt = (
             "你是一个有用的 AI 助手，可以使用工具来完成任务。"
             "当需要读取文件、执行命令或搜索信息时，请使用对应的工具。"
             "用中文回复用户。"
         )
+        memory_context = _load_memory_context()
+        if memory_context:
+            self.system_prompt = (
+                f"{base_prompt}\n\n"
+                f"[长期记忆 — 关于用户的已知信息]\n"
+                f"{memory_context}\n"
+            )
+        else:
+            self.system_prompt = base_prompt
+
         self.messages = [
             {"role": "system", "content": self.system_prompt},
         ]
@@ -158,10 +195,13 @@ class AIAgent:
         ]
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=compress_messages,
-                max_tokens=512,  # 摘要不要超过 512 tokens
+            response = retry_call(
+                lambda: self.client.chat.completions.create(
+                    model=self.model,
+                    messages=compress_messages,
+                    max_tokens=512,
+                ),
+                description="摘要生成",
             )
             return response.choices[0].message.content or "(摘要生成失败)"
         except Exception as e:
@@ -241,7 +281,10 @@ class AIAgent:
             kwargs["tools"] = self.tools
             kwargs["tool_choice"] = "auto"
 
-        stream = self.client.chat.completions.create(**kwargs)
+        stream = retry_call(
+            lambda: self.client.chat.completions.create(**kwargs),
+            description="LLM 流式调用",
+        )
 
         content = ""
         reasoning_content = ""
@@ -306,6 +349,12 @@ class AIAgent:
             approved = self.approval.request(name, args)
             if not approved:
                 return f"⛔ 用户拒绝了 '{name}' 的执行"
+
+        # ── 护栏检查（Step 13） ───────────────────────
+        block_reason = guardrails.check(name, args)
+        if block_reason:
+            print(f"  🛡️ {block_reason[:120]}")
+            return block_reason
 
         try:
             handler = get_handler(name)

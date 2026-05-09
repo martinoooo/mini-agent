@@ -1,8 +1,9 @@
 """
-CLI 入口 — Step 11: 命令审批
+CLI 入口 — Step 14: 错误分类与重试
 
-相比 Step 10 新增:
-  - 高风险工具（run_shell）执行前需要用户 y/n 确认
+相比 Step 12 新增:
+  - 护栏自动检测：循环调用、敏感路径、超长命令
+  - /reset 时同步重置护栏调用历史
   - approval_callback 函数注入 AIAgent
   - /approval 命令查看当前审批策略
 
@@ -75,7 +76,7 @@ def main():
         agent = _new_agent(api_key, approve_callback)
 
     print("=" * 50)
-    print("  Mini Agent Step 11 — 命令审批")
+    print("  Mini Agent Step 14 — 错误重试")
     print(f"  模型: {agent.model} | 工具集: {current_toolset}")
     print(f"  审批: {'开启' if approval_on else '关闭'}")
     if agent.session_id:
@@ -143,7 +144,9 @@ def main():
         if user_input == "/reset":
             agent.messages = [{"role": "system", "content": agent.system_prompt}]
             agent.session_id = None
-            print("🔄 对话已重置")
+            from tools import guardrails
+            guardrails.reset()
+            print("🔄 对话已重置（含护栏状态）")
             continue
 
         if user_input == "/approval":

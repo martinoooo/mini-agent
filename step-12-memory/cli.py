@@ -1,8 +1,9 @@
 """
-CLI 入口 — Step 11: 命令审批
+CLI 入口 — Step 12: 记忆系统
 
-相比 Step 10 新增:
-  - 高风险工具（run_shell）执行前需要用户 y/n 确认
+相比 Step 11 新增:
+  - 启动时自动加载 ~/.mini-agent/MEMORY.md 到上下文
+  - read_memory / write_memory 工具让 LLM 自主管理长期记忆
   - approval_callback 函数注入 AIAgent
   - /approval 命令查看当前审批策略
 
@@ -75,7 +76,7 @@ def main():
         agent = _new_agent(api_key, approve_callback)
 
     print("=" * 50)
-    print("  Mini Agent Step 11 — 命令审批")
+    print("  Mini Agent Step 12 — 记忆系统")
     print(f"  模型: {agent.model} | 工具集: {current_toolset}")
     print(f"  审批: {'开启' if approval_on else '关闭'}")
     if agent.session_id:

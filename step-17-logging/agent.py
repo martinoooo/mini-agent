@@ -1,28 +1,47 @@
 """
-AIAgent 类 — Step 11: 命令审批
+AIAgent 类 — Step 17: 日志系统
 
-相比 Step 10 的变化:
-  - 新增 approval_manager: 高风险工具执行前需要用户确认
-  - _execute_tool() 增加审批检查环节
-  - 审批回调由 CLI 注入，Agent 本身不关心交互方式
+相比 Step 16 的变化:
+  - 系统事件改用 logger，不再用 print
+  - 双输出: 控制台 (INFO+) + 文件 ~/.mini-agent/agent.log (DEBUG+)
+  - 流式输出仍用 print（用户直接看到的内容）
 
 学习目标:
-  - 理解策略模式（Strategy Pattern）：审批逻辑可插拔
-  - 理解为什么 Agent 不应该自己做审批决策
-  - 理解回调注入：CLI 和 Agent 的职责分离
+  - 理解日志等级：DEBUG < INFO < WARNING < ERROR
+  - 理解双输出设计：控制台实时监控 + 文件事后排查
+  - 理解 print vs logger：用户看到 vs 开发者看到
 """
 
 import json
 import sys
-from openai import OpenAI
+from pathlib import Path
+from providers import create_provider
 from tools.registry import get_handler, build_openai_schemas
 from tools.approval import ApprovalManager, RISK_MEDIUM
+from tools import guardrails
+from tools.retry import retry_call
 from toolsets import get_toolset, discover_tools
+from logger import get as get_logger
 
-# 压缩参数
-TOKEN_THRESHOLD = 4000   # token 数超过此值触发压缩
-KEEP_TAIL = 6             # 保留最后 N 条消息不压缩
-TOKEN_ESTIMATE_RATIO = 4  # 粗略估算: N 字符 ≈ 1 token
+KEEP_TAIL = 6
+TOKEN_ESTIMATE_RATIO = 4
+
+MEMORY_FILE = Path.home() / ".mini-agent" / "MEMORY.md"
+
+
+def _load_memory_context() -> str:
+    """读取 MEMORY.md，返回注入 system prompt 的上下文"""
+    try:
+        if MEMORY_FILE.exists():
+            content = MEMORY_FILE.read_text(encoding="utf-8").strip()
+            # 去掉 HTML 注释行，提取实际内容
+            lines = [l for l in content.split("\n") if not l.strip().startswith("<!--")]
+            text = "\n".join(lines).strip()
+            if text and text != "(记忆为空)":
+                return text
+    except Exception:
+        pass
+    return ""
 
 
 class AIAgent:
@@ -31,28 +50,49 @@ class AIAgent:
         api_key: str,
         base_url: str = "https://api.deepseek.com",
         model: str = "deepseek-v4-pro",
+        provider_type: str = "openai_compat",  # ← Step 15
         toolset: str = "full",
         max_iterations: int = 10,
-        approval_callback=None,        # ← Step 11: 审批回调
+        compress_threshold: int = 4000,  # ← Step 16
+        approval_callback=None,
     ):
-        self.client = OpenAI(api_key=api_key, base_url=base_url)
+        self.compress_threshold = compress_threshold
+        self.log = get_logger("agent")  # ← Step 17
+        # ── Provider 抽象层 ──────────────────────────
+        self.provider = create_provider(
+            provider_type=provider_type,
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+        )
         self.model = model
+        self.provider_type = provider_type
         self.toolset_name = toolset
         self.max_iterations = max_iterations
         self.session_id = None
 
-        # ── 审批管理器 ───────────────────────────────
         self.approval = ApprovalManager(callback=approval_callback)
 
         discover_tools()
         tool_names = get_toolset(toolset)
         self.tools = build_openai_schemas(tool_names)
 
-        self.system_prompt = (
+        # ── 构建 system prompt（含记忆上下文）──────────
+        base_prompt = (
             "你是一个有用的 AI 助手，可以使用工具来完成任务。"
             "当需要读取文件、执行命令或搜索信息时，请使用对应的工具。"
             "用中文回复用户。"
         )
+        memory_context = _load_memory_context()
+        if memory_context:
+            self.system_prompt = (
+                f"{base_prompt}\n\n"
+                f"[长期记忆 — 关于用户的已知信息]\n"
+                f"{memory_context}\n"
+            )
+        else:
+            self.system_prompt = base_prompt
+
         self.messages = [
             {"role": "system", "content": self.system_prompt},
         ]
@@ -114,7 +154,7 @@ class AIAgent:
             return  # 消息太少，不需要压缩
 
         estimated = self._estimate_tokens()
-        if estimated < TOKEN_THRESHOLD:
+        if estimated < self.compress_threshold:
             return
 
         # 分割
@@ -125,10 +165,13 @@ class AIAgent:
         if len(middle) < 4:
             return  # 中间部分太少，不值得压缩
 
-        print(f"\n📦 对话已超过 {TOKEN_THRESHOLD} tokens (约 {estimated})，正在压缩中间 {len(middle)} 条消息...")
+        self.log.info(
+            "对话超过 %s tokens (约 %s)，压缩 %s 条中间消息",
+            self.compress_threshold, estimated, len(middle),
+        )
 
         summary = self._generate_summary(middle)
-        print(f"  ✅ 压缩完成，摘要 {len(summary)} 字符")
+        self.log.info("压缩完成，摘要 %s 字符", len(summary))
 
         # 重建消息列表: system + summary(as system) + tail
         self.messages = head + [
@@ -158,10 +201,13 @@ class AIAgent:
         ]
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=compress_messages,
-                max_tokens=512,  # 摘要不要超过 512 tokens
+            response = retry_call(
+                lambda: self.provider.create(
+                    model=self.model,
+                    messages=compress_messages,
+                    max_tokens=512,
+                ),
+                description="摘要生成",
             )
             return response.choices[0].message.content or "(摘要生成失败)"
         except Exception as e:
@@ -200,9 +246,9 @@ class AIAgent:
                 for tc in tool_calls:
                     name = tc["function"]["name"]
                     args = json.loads(tc["function"]["arguments"])
-                    print(f"  🔧 [{iteration}] {name}({json.dumps(args, ensure_ascii=False)})")
+                    self.log.info("[%s] %s(%s)", iteration, name, json.dumps(args, ensure_ascii=False))
                     result = self._execute_tool(name, args)
-                    print(f"  ✅ [{iteration}] {result[:120]}")
+                    self.log.info("[%s] %s → %s", iteration, name, result[:120])
                     self.messages.append({
                         "role": "tool",
                         "tool_call_id": tc["id"],
@@ -236,12 +282,14 @@ class AIAgent:
           tool_calls:      拼接完成的工具调用列表 [{id, function: {name, arguments}}]
           finish_reason:   "stop" | "tool_calls" | None
         """
-        kwargs = {"model": self.model, "messages": self.messages, "stream": True}
-        if self.tools:
-            kwargs["tools"] = self.tools
-            kwargs["tool_choice"] = "auto"
-
-        stream = self.client.chat.completions.create(**kwargs)
+        stream = retry_call(
+            lambda: self.provider.create_stream(
+                model=self.model,
+                messages=self.messages,
+                tools=self.tools,
+            ),
+            description="LLM 流式调用",
+        )
 
         content = ""
         reasoning_content = ""
@@ -306,6 +354,12 @@ class AIAgent:
             approved = self.approval.request(name, args)
             if not approved:
                 return f"⛔ 用户拒绝了 '{name}' 的执行"
+
+        # ── 护栏检查（Step 13） ───────────────────────
+        block_reason = guardrails.check(name, args)
+        if block_reason:
+            self.log.warning("护栏拦截: %s", block_reason[:120])
+            return block_reason
 
         try:
             handler = get_handler(name)

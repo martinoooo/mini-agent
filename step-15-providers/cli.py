@@ -1,10 +1,10 @@
 """
-CLI 入口 — Step 11: 命令审批
+CLI 入口 — Step 15: 多模型适配
 
-相比 Step 10 新增:
-  - 高风险工具（run_shell）执行前需要用户 y/n 确认
-  - approval_callback 函数注入 AIAgent
-  - /approval 命令查看当前审批策略
+相比 Step 14 新增:
+  - providers/ 抽象层：Agent 不直接依赖 OpenAI SDK
+  - PROVIDER_TYPE 环境变量切换模型提供商
+  - 当前支持: openai_compat (DeepSeek / OpenAI / OpenRouter)
 
 用法:
   python cli.py                             # 启用审批（默认）
@@ -75,7 +75,7 @@ def main():
         agent = _new_agent(api_key, approve_callback)
 
     print("=" * 50)
-    print("  Mini Agent Step 11 — 命令审批")
+    print("  Mini Agent Step 15 — 多模型适配")
     print(f"  模型: {agent.model} | 工具集: {current_toolset}")
     print(f"  审批: {'开启' if approval_on else '关闭'}")
     if agent.session_id:
@@ -143,7 +143,9 @@ def main():
         if user_input == "/reset":
             agent.messages = [{"role": "system", "content": agent.system_prompt}]
             agent.session_id = None
-            print("🔄 对话已重置")
+            from tools import guardrails
+            guardrails.reset()
+            print("🔄 对话已重置（含护栏状态）")
             continue
 
         if user_input == "/approval":
@@ -177,6 +179,7 @@ def _new_agent(api_key: str, approval_cb=None) -> AIAgent:
         api_key=api_key,
         base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
         model=os.getenv("MODEL", "deepseek-v4-pro"),
+        provider_type=os.getenv("PROVIDER_TYPE", "openai_compat"),
         toolset=os.getenv("TOOLSET", "full"),
         max_iterations=10,
         approval_callback=approval_cb,

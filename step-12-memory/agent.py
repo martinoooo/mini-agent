@@ -1,28 +1,46 @@
 """
-AIAgent 类 — Step 11: 命令审批
+AIAgent 类 — Step 12: 记忆系统
 
-相比 Step 10 的变化:
-  - 新增 approval_manager: 高风险工具执行前需要用户确认
-  - _execute_tool() 增加审批检查环节
-  - 审批回调由 CLI 注入，Agent 本身不关心交互方式
+相比 Step 11 的变化:
+  - 启动时自动加载 MEMORY.md 注入到 system prompt
+  - LLM 始终知道用户偏好和历史上下文（无需主动查询）
+  - read_memory / write_memory 工具让 LLM 自主管理记忆
 
 学习目标:
-  - 理解策略模式（Strategy Pattern）：审批逻辑可插拔
-  - 理解为什么 Agent 不应该自己做审批决策
-  - 理解回调注入：CLI 和 Agent 的职责分离
+  - 理解 Agent 长期记忆的基本模式：文件作为知识库
+  - 理解 RAG 雏形：读取 → 注入上下文 → LLM 利用
+  - 理解为什么主动注入比被动查询更高效
 """
 
 import json
 import sys
+from pathlib import Path
 from openai import OpenAI
 from tools.registry import get_handler, build_openai_schemas
 from tools.approval import ApprovalManager, RISK_MEDIUM
 from toolsets import get_toolset, discover_tools
 
 # 压缩参数
-TOKEN_THRESHOLD = 4000   # token 数超过此值触发压缩
-KEEP_TAIL = 6             # 保留最后 N 条消息不压缩
-TOKEN_ESTIMATE_RATIO = 4  # 粗略估算: N 字符 ≈ 1 token
+TOKEN_THRESHOLD = 4000
+KEEP_TAIL = 6
+TOKEN_ESTIMATE_RATIO = 4
+
+MEMORY_FILE = Path.home() / ".mini-agent" / "MEMORY.md"
+
+
+def _load_memory_context() -> str:
+    """读取 MEMORY.md，返回注入 system prompt 的上下文"""
+    try:
+        if MEMORY_FILE.exists():
+            content = MEMORY_FILE.read_text(encoding="utf-8").strip()
+            # 去掉 HTML 注释行，提取实际内容
+            lines = [l for l in content.split("\n") if not l.strip().startswith("<!--")]
+            text = "\n".join(lines).strip()
+            if text and text != "(记忆为空)":
+                return text
+    except Exception:
+        pass
+    return ""
 
 
 class AIAgent:
@@ -33,7 +51,7 @@ class AIAgent:
         model: str = "deepseek-v4-pro",
         toolset: str = "full",
         max_iterations: int = 10,
-        approval_callback=None,        # ← Step 11: 审批回调
+        approval_callback=None,
     ):
         self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.model = model
@@ -41,18 +59,28 @@ class AIAgent:
         self.max_iterations = max_iterations
         self.session_id = None
 
-        # ── 审批管理器 ───────────────────────────────
         self.approval = ApprovalManager(callback=approval_callback)
 
         discover_tools()
         tool_names = get_toolset(toolset)
         self.tools = build_openai_schemas(tool_names)
 
-        self.system_prompt = (
+        # ── 构建 system prompt（含记忆上下文）──────────
+        base_prompt = (
             "你是一个有用的 AI 助手，可以使用工具来完成任务。"
             "当需要读取文件、执行命令或搜索信息时，请使用对应的工具。"
             "用中文回复用户。"
         )
+        memory_context = _load_memory_context()
+        if memory_context:
+            self.system_prompt = (
+                f"{base_prompt}\n\n"
+                f"[长期记忆 — 关于用户的已知信息]\n"
+                f"{memory_context}\n"
+            )
+        else:
+            self.system_prompt = base_prompt
+
         self.messages = [
             {"role": "system", "content": self.system_prompt},
         ]
