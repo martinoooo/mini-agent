@@ -29,6 +29,11 @@
 - [x] **Step 25** — 测试套件：29 个单元测试，核心模块回归保护
 - [x] **Step 26** — 插件系统：Hook 生命周期，动态发现和加载
 - [x] **Step 27** — TUI 高级界面：Rich 库，彩色面板，Markdown 渲染
+- [x] **Step 28** — MCP 协议集成：JSON-RPC stdio 客户端，自动发现外部工具
+- [x] **Step 29** — 自升级机制：工具调用 Nudge，自动提示创建技能
+- [x] **Step 30** — 标题生成器：LLM 自动生成会话标题
+- [x] **Step 31** — 思考擦除器：保存前剥离 reasoning_content，节省存储
+- [x] **Step 32** — 并行工具执行：ThreadPoolExecutor 并发执行多个工具
 
 ## 待开发
 
@@ -36,7 +41,6 @@
 
 - [ ] **浏览器工具** — Playwright 集成，页面导航/截图/点击，理解异步工具编排
 - [ ] **Docker 沙箱** — Docker 容器隔离执行，真正的安全沙箱
-- [ ] **MCP 协议集成** — 连接 MCP Server，接入外部工具生态
 - [ ] **图像生成** — 接入 DALL-E/Stable Diffusion，理解多模态输出
 - [ ] **语音交互** — TTS/STT，语音输入输出
 
