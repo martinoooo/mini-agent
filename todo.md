@@ -34,6 +34,9 @@
 - [x] **Step 30** — 标题生成器：LLM 自动生成会话标题
 - [x] **Step 31** — 思考擦除器：保存前剥离 reasoning_content，节省存储
 - [x] **Step 32** — 并行工具执行：ThreadPoolExecutor 并发执行多个工具
+- [x] **Step 33** — 多角色 Profile：SOUL.md 定义人格，delegate_task 指定角色
+- [x] **Step 34** — @角色路由：共享频道上下文，@coder/@researcher/@reviewer 协作
+- [x] **Step 35** — Kanban 看板：JSON 存储，后台调度，角色认领任务
 
 ## 待开发
 
