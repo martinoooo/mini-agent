@@ -174,3 +174,45 @@ class AIAgent:
 > 框架是帮你做事的，但理解了底层原理，你才不会被框架限制。
 
 Mini-Agent 500 行代码把 LangGraph 的核心概念全部走了一遍：Agent 循环、工具调用、状态管理、子 Agent、人工审批、定时调度、插件钩子。看完 Mini-Agent，再看 LangGraph 文档就是"哦，这个 Node 就是我的函数，这个 Edge 就是我的 while continue"。
+
+---
+
+## 补充：这些框架还值得学吗？
+
+JD 里常见的"熟悉 LangGraph / AutoGen / CrewAI 等主流智能体框架"，本质是**招聘惯性**——HR 和技术经理互相抄模板，不代表团队真在用。但背后想筛的东西是有道理的：有状态图、角色分工、工具调用、人机协同这套思维范式。
+
+### 行业正在发生的三个变化
+
+**1. 模型厂商在"往上吃"**
+
+以前做 agent 需要三方框架帮你管 prompt、调 API、处理 tool calling。现在各模型厂商在自家 SDK 里直接把这些做了：
+
+| 厂商 | SDK / 方案 | 能力 |
+|------|-----------|------|
+| OpenAI | Python/Node SDK、Assistants API、Agents SDK | 内置 agent loop、handoff、guardrails、服务端托管 agent 状态 |
+| Anthropic | Python/TypeScript SDK、Claude Agent SDK、MCP | 原生 tool use、thinking、prompt caching、工具插拔协议 |
+| Google | Gemini SDK、A2A 协议 | 多模态、function calling、grounding（联网检索）、agent 间通信协议 |
+
+打个比方：以前手机需要装第三方输入法和相机 app，现在系统自带足够好了，第三方只能做小众差异化。框架的价值从"封装 API + 管状态"收缩成"把几个 agent 串成流程图的胶水层"。
+
+**2. MCP 和 A2A 在标准化协议**
+
+- **MCP**（Anthropic 主导）：定义"工具怎么描述自己、agent 怎么调用工具"的统一格式。普及后，不同家的 agent 和工具即插即用——像 USB-C 统一了充电线。
+- **A2A**（Google 主导）：定义"agent A 怎么跟 agent B 对话通信"的统一格式，让不同模型搭的 agent 能互操作。
+
+趋势就是：那些框架里"封装 tool 调用"的代码会越来越多余——当协议标准化后，你不需要每换一个框架就重新写集成代码。
+
+**3. Agent 在分化为两个赛道**
+
+| 赛道 | 代表产品 | 特点 | 热度 |
+|------|---------|------|------|
+| **代码生成型 agent** | Claude Code、Cursor、Devin | 一句话→写代码、调 bug、跑测试。单一 agent，强工具执行能力 | 🔥 爆发中 |
+| **对话式多 agent** | LangGraph、CrewAI、AutoGen | 定义多个 AI 角色互相对话协作（PM agent + 架构师 agent + 测试 agent...） | 📉 hype 在降温 |
+
+多 agent 对话在企业内部 RPA / 流程自动化里还有空间（审批流、合同审核），但实际落地成本高很多——多 agent 之间沟通的不确定性大，调试困难。
+
+### 结论
+
+- **简历上写掌握了 LangGraph 的 graph/state/checkpoint 思想，依然有价值**——招聘方要找的是理解这套范式的人，不是绑定某个框架
+- **真正的核心竞争力**：理解模型能力边界、评估体系、MCP 协议、把 agent 拆成可测试的模块——比会调某个框架的 API 强得多
+- **学思想 > 学框架，看协议 > 看封装，跟模型能力前沿走 > 跟多 agent 角色扮演走**
